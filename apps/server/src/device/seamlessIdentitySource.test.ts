@@ -20,6 +20,7 @@ it("reads the installed Mac agent identity without returning its credentials", (
         : module === "node:fs"
           ? {
               readFileSync: (path: string) => {
+                if (path.endsWith("/.seamless-computer.json")) return '{"id":"retired-agent"}';
                 if (!path.endsWith("/Library/Application Support/Seamless/config.json"))
                   throw new Error("missing");
                 return '{"id":"mac-host","token":"private"}';
@@ -30,7 +31,7 @@ it("reads the installed Mac agent identity without returning its credentials", (
   expect(output).toBe("mac-host");
 });
 
-it("reads the Windows contributor id from the existing desktop installation", () => {
+it("prefers the installed Windows identity over a retired agent configuration", () => {
   let output = "";
   NodeVM.runInNewContext(seamlessIdentitySource, {
     process: {
@@ -46,9 +47,7 @@ it("reads the Windows contributor id from the existing desktop installation", ()
         ? { homedir: () => "C:/fixture" }
         : module === "node:fs"
           ? {
-              readFileSync: () => {
-                throw new Error("missing");
-              },
+              readFileSync: () => '{"id":"retired-agent"}',
             }
           : { execFileSync: () => "    id    REG_SZ    windows-host\r\n" },
   });
