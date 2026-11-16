@@ -77,8 +77,10 @@ function SeamlessConnection(props: {
         parsed.password ||
         parsed.search ||
         parsed.hash
-      )
-        throw new Error();
+      ) {
+        setError("Enter an HTTP or HTTPS Seamless hub address.");
+        return;
+      }
       hubUrl = parsed.href.replace(/\/+$/, "");
     } catch {
       setError("Enter an HTTP or HTTPS Seamless hub address.");

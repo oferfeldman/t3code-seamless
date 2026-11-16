@@ -188,6 +188,15 @@ jobs:
     steps:
       - uses: actions/download-artifact@v8
         with:
+          name: verify-win-x64
+          path: verify
+      - name: Verify the packaged app uses the fork update feed
+        run: |
+          tar -xOf verify/unpacked.tar win-unpacked/resources/app-update.yml > "$RUNNER_TEMP/app-update.yml"
+          grep -Fx 'owner: oferfeldman' "$RUNNER_TEMP/app-update.yml"
+          grep -Fx 'repo: t3code-seamless' "$RUNNER_TEMP/app-update.yml"
+      - uses: actions/download-artifact@v8
+        with:
           path: artifacts
           merge-multiple: true
           pattern: desktop-*
