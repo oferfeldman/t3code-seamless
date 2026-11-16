@@ -22,6 +22,7 @@ jobs:
     outputs:
       build: ${{ steps.sync.outputs.build }}
       ref: ${{ steps.sync.outputs.ref }}
+      base: ${{ steps.sync.outputs.base }}
       version: ${{ steps.sync.outputs.version }}
       upstream: ${{ steps.sync.outputs.upstream }}
     steps:
@@ -56,6 +57,7 @@ jobs:
             await git('config', 'user.name', 'github-actions[bot]');
             await git('config', 'user.email', '41898282+github-actions[bot]@users.noreply.github.com');
             await git('fetch', '--no-tags', 'https://github.com/pingdotgg/t3code.git', `refs/tags/${upstream.tag_name}`);
+            const base = await git('rev-parse', 'FETCH_HEAD');
             // A conflict fails this job; never discard the Seamless side or publish that candidate.
             await git('merge', '--no-edit', 'FETCH_HEAD');
             const ref = await git('rev-parse', 'HEAD');
@@ -70,6 +72,7 @@ jobs:
             const version = match[1] + (BigInt(match[2]) * 1000000n + BigInt(process.env.GITHUB_RUN_NUMBER));
             core.setOutput('build', 'true');
             core.setOutput('ref', ref);
+            core.setOutput('base', base);
             core.setOutput('version', version);
             core.setOutput('upstream', upstream.tag_name);
 
@@ -91,7 +94,7 @@ jobs:
       - name: Install the existing browser-test prerequisite
         run: vp exec --filter @t3tools/web playwright install --with-deps chromium --only-shell
       - name: Check the Seamless overlay against its upstream base
-        run: vp run check:changed ${{ needs.sync.outputs.upstream }}
+        run: vp run check:changed ${{ needs.sync.outputs.base }}
       - name: Align release versions
         run: node scripts/update-release-package-versions.ts '${{ needs.sync.outputs.version }}'
       - name: Build the server, web client and desktop bundle
