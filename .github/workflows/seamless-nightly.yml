@@ -94,7 +94,7 @@ jobs:
       - name: Install the existing browser-test prerequisite
         run: vp exec --filter @t3tools/web playwright install --with-deps chromium --only-shell
       - name: Check the Seamless overlay against its upstream base
-        run: vp run check:changed ${{ needs.sync.outputs.base }}
+        run: vp run check:changed ${{ needs.sync.outputs.base }} || { vp run --last-details; exit 1; }
       - name: Align release versions
         run: node scripts/update-release-package-versions.ts '${{ needs.sync.outputs.version }}'
       - name: Build the server, web client and desktop bundle
