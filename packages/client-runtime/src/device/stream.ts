@@ -11,6 +11,7 @@ import * as Option from "effect/Option";
 import { createCanvasFrameSink, type DeviceFrameSink } from "./frame.ts";
 import { type DeviceHubAccess, withDeviceHubQuery } from "./hubAccess.ts";
 import type { DevicePlatform } from "@t3tools/contracts";
+import { createSeamlessStreamClient } from "./seamlessStream.ts";
 
 export type DeviceStreamStatus = "connecting" | "streaming" | "error";
 
@@ -96,6 +97,11 @@ export interface DuoPanelSinks {
 }
 
 export interface DeviceStreamEvents {
+  readonly onDisplays?: (
+    displays: ReadonlyArray<{ id: number; name: string }>,
+    selected: number,
+    all: boolean,
+  ) => void;
   readonly onDuoControl?: (state: DuoControlState) => void;
   readonly onDuoUnavailable?: (detail?: string) => void;
   readonly onStatus: (status: DeviceStreamStatus, detail?: string) => void;
@@ -116,6 +122,7 @@ export interface DeviceStreamEvents {
 }
 
 export interface DeviceStreamTarget {
+  readonly seamless?: boolean;
   readonly platform: DevicePlatform;
   readonly deviceId: string;
   readonly access: DeviceHubAccess;
@@ -308,6 +315,15 @@ export class AvccDemuxer {
 }
 
 export interface DeviceStreamClient {
+  readonly selectDisplay?: (id: number) => void;
+  readonly sendMouse?: (
+    phase: "begin" | "move" | "end",
+    x: number,
+    y: number,
+    button?: number,
+  ) => void;
+  readonly sendScroll?: (dx: number, dy: number) => void;
+  readonly releaseInput?: () => void;
   readonly start: () => void;
   readonly stop: () => void;
   /**
@@ -410,6 +426,7 @@ export function createDeviceStreamClient(
   output: HTMLCanvasElement | DeviceFrameSink,
   events: DeviceStreamEvents,
 ): DeviceStreamClient {
+  if (target.seamless) return createSeamlessStreamClient(target, output, events);
   const { access, platform, deviceId } = target;
   const sink = "present" in output ? output : createCanvasFrameSink(output);
   // Android normally streams over serve-emu's socket; a serve-sim-only host serves it like iOS.

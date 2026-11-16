@@ -49,7 +49,7 @@ describe("native device stream transport", () => {
     vi.unstubAllGlobals();
   });
 
-  function setup(platform: "ios" | "android") {
+  function setup(platform: "ios" | "android" | "desktop", seamless = false) {
     vi.useFakeTimers();
     vi.stubGlobal("VideoDecoder", vi.fn());
     vi.stubGlobal("EncodedVideoChunk", vi.fn());
@@ -87,6 +87,7 @@ describe("native device stream transport", () => {
     const client = createDeviceStreamClient(
       {
         platform,
+        seamless,
         deviceId: "test device",
         preferMjpeg: platform === "ios",
         access: {
@@ -101,6 +102,44 @@ describe("native device stream transport", () => {
     );
     return { client, opened, waitForSocket, events, fetch };
   }
+
+  it("reassembles a fragmented Seamless handshake and releases held desktop input", async () => {
+    const { client, opened, events } = setup("desktop", true);
+    client.start();
+    const socket = await opened;
+    socket.onopen?.();
+    expect(socket.url).toContain("/seamless/stream?device=test%20device");
+    const hello = new TextEncoder().encode('{"type":"welcome","width":1920,"height":1080}\n');
+    socket.onmessage?.({ data: hello.slice(0, 7).buffer });
+    expect(events.onInputConnected).not.toHaveBeenCalledWith(true);
+    socket.onmessage?.({ data: hello.slice(7).buffer });
+    expect(events.onScreen).toHaveBeenCalledWith({
+      width: 1920,
+      height: 1080,
+      orientation: "landscape_left",
+    });
+    client.sendMouse?.("begin", 0.5, 0.25, 1);
+    client.sendKey({ keyCode: 17, location: 1 } as KeyboardEvent, "down");
+    socket.send.mockClear();
+    client.releaseInput?.();
+    const packets = socket.send.mock.calls.map((call) => Array.from(call[0] as Uint8Array));
+    expect(packets).toContainEqual([11, 0, 2, 1, 0]);
+    expect(packets).toContainEqual([13, 0, 3, 0, 162, 0]);
+    client.stop();
+  });
+
+  it("rejects oversized native packets before buffering their body", async () => {
+    const { client, opened, events } = setup("desktop", true);
+    client.start();
+    const socket = await opened;
+    socket.onmessage?.({
+      data: new TextEncoder().encode('{"type":"welcome","width":1920,"height":1080}\n').buffer,
+    });
+    socket.onmessage?.({ data: new Uint8Array([1, 2, 0, 0, 0]).buffer });
+    expect(events.onStatus).toHaveBeenCalledWith("error", "Invalid Seamless video packet.");
+    expect(socket.close).toHaveBeenCalled();
+    client.stop();
+  });
 
   it("renews an expired Android ticket when the HTTP upgrade is rejected instead of retrying it forever", async () => {
     const { client, opened, events } = setup("android");

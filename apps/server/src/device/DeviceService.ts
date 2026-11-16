@@ -26,6 +26,7 @@ import {
   type DeviceHostConfig,
   type EasDeviceHostConfig,
   type SimlockDeviceHostConfig,
+  type SeamlessDeviceHostConfig,
   type SshDeviceHostConfig,
   type DeviceHostSummary,
   LOCAL_DEVICE_HOST_ID,
@@ -80,6 +81,7 @@ import * as DeviceHost from "./DeviceHost.ts";
 import * as SshDeviceHost from "./SshDeviceHost.ts";
 import * as EasDeviceHost from "./EasDeviceHost.ts";
 import * as SimlockDeviceHost from "./SimlockDeviceHost.ts";
+import * as SeamlessDeviceHost from "./SeamlessDeviceHost.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { makeExpoApi } from "./ExpoApi.ts";
 import * as Exit from "effect/Exit";
@@ -318,6 +320,7 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
       supportsToolInspection: true,
       supportsEasHosts: true,
       supportsSimlockHosts: true,
+      supportsSeamlessHosts: true,
       hosts: initialHosts,
       hostStatus: initialSettings.enabled ? "idle" : "disabled",
       hostStatuses: {},
@@ -1024,7 +1027,10 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
   const detail: DeviceService["Service"]["detail"] = Effect.fn("DeviceService.detail")(
     function* (input) {
       const { ready, device } = yield* resolveDevice(input.hostId, input.deviceId);
-      const read = yield* readDeviceDetail(ready, device.platform, device.id);
+      const read =
+        device.platform === "desktop"
+          ? { settings: {}, foregroundApp: null }
+          : yield* readDeviceDetail(ready, device.platform, device.id);
       return {
         hostId: ready.hostId,
         deviceId: device.id,
@@ -1149,6 +1155,7 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
             reason:
               "Agent device access requires enabled device support, agent access, and an available simulator platform on this host.",
           });
+        if (ready.agentLauncher) return { agentDeviceId: null, session: "seamless", args: [] };
         const { configPath, agentDeviceId, boundSession, installDirectory } =
           yield* lifecycleLock.withPermit(
             Effect.gen(function* () {
@@ -1221,7 +1228,10 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
               )
             )
               return Option.none();
-            const launcher = yield* launchers.bind({ session, targetArgs });
+            const ready = yield* agentReadinessIfSupported(target.hostId);
+            const launcher = ready?.agentLauncher
+              ? yield* ready.agentLauncher(target.deviceId, session)
+              : yield* launchers.bind({ session, targetArgs });
             boundLaunchers.set(session, launcher);
             return Option.some(launcher);
           }),
@@ -1246,6 +1256,21 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
       sessionsForThread,
     }),
     setHostStatus,
+    refreshHost: Effect.fn("DeviceService.refreshHost")(function* (hostId: DeviceHostId) {
+      yield* readinessIfSupported(hostId).pipe(
+        Effect.flatMap((ready) => (ready ? refresh(ready) : Effect.void)),
+        Effect.catch((error) =>
+          publish((state) => ({
+            ...state,
+            devices: state.devices.filter((device) => device.hostId !== hostId),
+            hostStatuses: {
+              ...state.hostStatuses,
+              [hostId]: { status: "failed", detail: error.message },
+            },
+          })),
+        ),
+      );
+    }),
     withLifecycleLock: lifecycleLock.withPermit,
     refreshHosts: Effect.gen(function* () {
       const summaries = yield* Effect.forEach(hosts.values(), (host) => host.summary);
@@ -1450,6 +1475,8 @@ export const make = Effect.gen(function* () {
     yield* Effect.context<Effect.Services<ReturnType<typeof EasDeviceHost.make>>>();
   const simlockContext =
     yield* Effect.context<Effect.Services<ReturnType<typeof SimlockDeviceHost.make>>>();
+  const seamlessContext =
+    yield* Effect.context<Effect.Services<ReturnType<typeof SeamlessDeviceHost.make>>>();
   const simlockAgentCli = Effect.fn("DeviceService.simlockAgentCli")(
     function* (hostId: string) {
       const nodePath = yield* resolveNodeExecutable("Device automation");
@@ -1509,6 +1536,18 @@ export const make = Effect.gen(function* () {
           if (configured.has(host.id)) continue;
           added = true;
           const hostScope = yield* Scope.fork(scope);
+          if (host.kind === "seamless") {
+            const instance = yield* SeamlessDeviceHost.make(host, config.stateDir).pipe(
+              Effect.provideService(Scope.Scope, hostScope),
+              Effect.provide(seamlessContext),
+            );
+            hosts.set(host.id, instance);
+            configured.set(host.id, { config: host, scope: hostScope });
+            yield* Effect.forever(
+              service.refreshHost(host.id).pipe(Effect.andThen(Effect.sleep("5 seconds"))),
+            ).pipe(Effect.forkIn(hostScope));
+            continue;
+          }
           if (host.kind === "simlock") {
             // Closing this scope releases the host's leases back to the pool.
             const instance = yield* SimlockDeviceHost.make(host, simlockAgentCli(host.id)).pipe(
@@ -1572,12 +1611,14 @@ export const make = Effect.gen(function* () {
   const configuredHosts = (value: {
     readonly deviceHosts: ReadonlyArray<SshDeviceHostConfig>;
     readonly easDeviceHosts: ReadonlyArray<EasDeviceHostConfig>;
+    readonly seamlessDeviceHosts: ReadonlyArray<SeamlessDeviceHostConfig>;
     readonly simlockDeviceHosts: ReadonlyArray<SimlockDeviceHostConfig>;
     readonly simlockDeviceHostsEnabled: boolean;
   }): ReadonlyArray<DeviceHostConfig> => {
     const hosts: Array<DeviceHostConfig> = [...value.deviceHosts];
     for (const host of [
       ...value.easDeviceHosts,
+      ...value.seamlessDeviceHosts,
       ...(value.simlockDeviceHostsEnabled ? value.simlockDeviceHosts : []),
     ]) {
       if (!hosts.some((existing) => existing.id === host.id)) hosts.push(host);

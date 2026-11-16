@@ -146,6 +146,10 @@ export interface DeviceOperations {
 }
 
 export interface DeviceHostReady {
+  readonly agentLauncher?: (
+    deviceId: string,
+    session: string,
+  ) => Effect.Effect<string, DeviceOperationError>;
   readonly nodePath: string;
   /**
    * Ends an agent-device session on the daemon that serves `deviceId`. Hosts

@@ -30,7 +30,7 @@ export type PullRequestDetailTab = "summary" | "guide" | "timeline" | "code";
 export interface DeviceTabTarget {
   hostId: string;
   deviceId: string;
-  platform: "ios" | "android";
+  platform: "ios" | "android" | "desktop";
   name: string;
 }
 

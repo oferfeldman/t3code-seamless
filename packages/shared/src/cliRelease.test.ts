@@ -1,8 +1,23 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { cliArchiveTarCommand, newestCliReleaseVersion, parseChecksums } from "./cliRelease.ts";
+import {
+  cliArchiveTarCommand,
+  cliReleaseDownloadBaseUrl,
+  cliReleaseIndexPageUrl,
+  newestCliReleaseVersion,
+  parseChecksums,
+} from "./cliRelease.ts";
 
 describe("cliRelease", () => {
+  it("keeps managed updates on the Seamless fork", () => {
+    expect(cliReleaseIndexPageUrl(1)).toBe(
+      "https://api.github.com/repos/oferfeldman/t3code-seamless/releases?per_page=100&page=1",
+    );
+    expect(cliReleaseDownloadBaseUrl("0.1.10-nightly.20261116.4761000001")).toBe(
+      "https://github.com/oferfeldman/t3code-seamless/releases/download/v0.1.10-nightly.20261116.4761000001",
+    );
+  });
+
   it("parses sha256sum output including binary-mode markers", () => {
     const checksums = parseChecksums(
       [

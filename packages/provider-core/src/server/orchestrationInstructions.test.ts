@@ -29,6 +29,11 @@ describe("T3 device instructions", () => {
       T3_CODE_DEVICE_TOOL_INSTRUCTIONS,
       "its snapshots, screenshots and input need `open <app>` first,",
     );
+    assert.include(T3_CODE_DEVICE_TOOL_INSTRUCTIONS, "Seamless uses visual control");
+    assert.include(
+      T3_CODE_DEVICE_TOOL_INSTRUCTIONS,
+      "It does not require `open <app>` or return accessibility refs.",
+    );
   });
 
   it("keep the failure rule from taking over or closing a session another thread holds", () => {

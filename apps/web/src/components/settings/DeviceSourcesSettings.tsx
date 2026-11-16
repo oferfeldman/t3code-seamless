@@ -30,6 +30,7 @@ import { Spinner } from "../ui/spinner";
 import { toastManager } from "../ui/toast";
 import { incompleteListings } from "../device/DeviceSetup";
 import { DeviceHostEditor } from "./DeviceHostEditor";
+import { SeamlessDeviceSources } from "./SeamlessDeviceSources";
 import { updateDeviceHosts, groupDeviceHosts } from "./deviceHostsSettings.logic";
 import { EasDeviceHostEditor } from "./EasDeviceHostEditor";
 import {
@@ -569,6 +570,7 @@ export function DeviceSourcesSettings(props: {
 
   return (
     <SettingsSection id="device-sources" title="Device sources" headerAction={addMenu}>
+      <SeamlessDeviceSources environments={members} disabled={disabled} />
       {rows.map((row) => (
         <DeviceSourceRow key={row.key} row={row} />
       ))}

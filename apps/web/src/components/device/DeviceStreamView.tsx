@@ -5,7 +5,7 @@ import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 
 import { cn } from "~/lib/utils";
 import { Button } from "~/components/ui/button";
-import { renewDeviceHubAccess, useDeviceHubAccess } from "~/state/device";
+import { renewDeviceHubAccess, useDeviceHubAccess, useDeviceState } from "~/state/device";
 import { resolveDeviceShape } from "@t3tools/client-runtime/device/shape-profile";
 import { deviceKeyboard, deviceModel } from "./deviceModels";
 import { fitDeviceFrame } from "./deviceFrameLayout";
@@ -35,6 +35,7 @@ const NO_AX_ATOM = Atom.make(AsyncResult.initial<ReadonlyArray<DeviceAxElement>,
 const CONTROLS_RAIL_WIDTH = 56;
 
 function screenAspect(platform: DevicePlatform, screen: DeviceScreenSize | null): number {
+  if (platform === "desktop") return screen ? screen.width / screen.height : 16 / 9;
   if (!screen) return platform === "ios" ? 9 / 19.5 : 9 / 20;
   const landscape =
     screen.orientation === "landscape_left" || screen.orientation === "landscape_right";
@@ -63,6 +64,11 @@ function screenRotation(platform: DevicePlatform, screen: DeviceScreenSize | nul
 }
 
 export interface DeviceViewControls {
+  readonly displays?: {
+    readonly items: ReadonlyArray<{ id: number; name: string }>;
+    readonly selected: number;
+    readonly select: (id: number) => void;
+  };
   readonly phone: boolean;
   readonly streaming: boolean;
   readonly phoneUnavailableReason: string | null;
@@ -75,6 +81,7 @@ export interface DeviceViewControls {
 }
 
 export interface DeviceStreamHandle {
+  readonly screenshot?: () => Promise<Blob>;
   readonly pressButton: (button: DeviceHardwareButton) => void;
   readonly rotate: () => void;
   readonly inputConnected: boolean;
@@ -96,6 +103,10 @@ export function DeviceStreamView(props: {
   /** The host serves only serve-sim's stream and input socket (Simlock). */
   readonly serveSimOnly?: boolean;
 }) {
+  const { state: deviceState } = useDeviceState(props.environmentId);
+  const seamless = deviceState.hosts.some(
+    (host) => host.id === props.hostId && host.kind === "seamless",
+  );
   const model = deviceModel(props.platform, props.deviceName ?? "");
   const isDuo = model?.id === "iphone-duo";
   const [presentation, setPresentation] = useState<"phone" | "flat">("phone");
@@ -121,6 +132,7 @@ export function DeviceStreamView(props: {
           deviceId: props.deviceId,
           access,
           serveSimOnly: props.serveSimOnly === true,
+          seamless,
           viewId,
         })
       : NO_SESSION_ATOM,
@@ -150,6 +162,7 @@ export function DeviceStreamView(props: {
   const retainingFrame =
     status === "connecting" && hasFrame && inputState.connected && screen !== null;
   const showPhone =
+    props.platform !== "desktop" &&
     props.allowPhoneView &&
     (status === "streaming" || retainingFrame) &&
     props.visible &&
@@ -201,7 +214,7 @@ export function DeviceStreamView(props: {
   );
   const axElements = AsyncResult.getOrElse(axResult, () => NO_AX_ELEMENTS);
 
-  const activePointer = useRef<{ id: number; x: number; y: number } | null>(null);
+  const activePointer = useRef<{ id: number; x: number; y: number; button?: number } | null>(null);
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- clears pointer ownership when its device input connection disconnects or is replaced
   useEffect(() => {
     if (!client || !inputState.connected) return;
@@ -218,6 +231,17 @@ export function DeviceStreamView(props: {
 
   const endPointer = (event: React.PointerEvent<HTMLElement>) => {
     const pointer = activePointer.current;
+    if (props.platform === "desktop") {
+      if (pointer?.id !== event.pointerId) return;
+      activePointer.current = null;
+      if (event.type === "pointerup") {
+        const { x, y } = normalizedPoint(event);
+        client?.sendMouse?.("end", x, y, pointer.button);
+      } else {
+        client?.releaseInput?.();
+      }
+      return;
+    }
     if (pointer?.id !== event.pointerId) return;
     activePointer.current = null;
     const { x, y } = event.type === "lostpointercapture" ? pointer : normalizedPoint(event);
@@ -260,6 +284,15 @@ export function DeviceStreamView(props: {
         <DeviceControlsSlot
           renderControls={props.renderControls}
           view={{
+            ...(session && client?.selectDisplay && session.state.displays.length > 1
+              ? {
+                  displays: {
+                    items: session.state.displays,
+                    selected: session.state.selectedDisplay,
+                    select: client.selectDisplay,
+                  },
+                }
+              : {}),
             phone: !!showPhone,
             streaming: status === "streaming",
             phoneUnavailableReason,
@@ -306,6 +339,20 @@ export function DeviceStreamView(props: {
                   pressButton: client.pressButton,
                   rotate: client.rotate,
                   inputConnected: inputState.connected,
+                  ...(seamless && session
+                    ? {
+                        screenshot: () =>
+                          new Promise<Blob>((resolve, reject) => {
+                            session.canvas.toBlob(
+                              (blob) =>
+                                blob
+                                  ? resolve(blob)
+                                  : reject(new Error("Could not capture the displayed screen.")),
+                              "image/png",
+                            );
+                          }),
+                      }
+                    : {}),
                 }
               : null,
           }}
@@ -322,13 +369,15 @@ export function DeviceStreamView(props: {
         )}
         tabIndex={0}
         role="application"
-        aria-label={`${props.platform === "ios" ? "iOS Simulator" : "Android Emulator"} screen`}
+        aria-label={`${props.platform === "desktop" ? "Remote desktop" : props.platform === "ios" ? "iOS Simulator" : "Android device"} screen`}
+        onBlur={() => client?.releaseInput?.()}
         onKeyDown={(event) => {
           if (event.target !== event.currentTarget) return;
-          if (event.metaKey && !["r", "R"].includes(event.key)) return;
+          if (!seamless && event.metaKey && !["r", "R"].includes(event.key)) return;
           // Let browser paste chords fire the paste event.
           if (
-            (event.ctrlKey && (event.key === "v" || event.key === "V")) ||
+            ((event.ctrlKey || (seamless && event.metaKey)) &&
+              (event.key === "v" || event.key === "V")) ||
             (event.shiftKey && event.key === "Insert")
           ) {
             return;
@@ -349,7 +398,33 @@ export function DeviceStreamView(props: {
         <div
           className={cn("relative select-none", showPhone && "invisible pointer-events-none")}
           style={{ width: frame.width, height: frame.height }}
+          onContextMenu={(event) => {
+            if (props.platform === "desktop") event.preventDefault();
+          }}
+          onWheel={(event) => {
+            if (seamless) client?.sendScroll?.(event.deltaX, event.deltaY);
+          }}
           onPointerDown={(event) => {
+            if (props.platform === "desktop") {
+              if (!inputState.connected) return;
+              event.preventDefault();
+              event.currentTarget.setPointerCapture(event.pointerId);
+              (event.currentTarget.parentElement as HTMLElement | null)?.focus();
+              const { x, y } = normalizedPoint(event);
+              activePointer.current = {
+                id: event.pointerId,
+                x,
+                y,
+                button: event.button === 2 ? 1 : event.button === 1 ? 2 : 0,
+              };
+              client?.sendMouse?.(
+                "begin",
+                x,
+                y,
+                event.button === 2 ? 1 : event.button === 1 ? 2 : 0,
+              );
+              return;
+            }
             if (event.button !== 0 || !inputState.connected || activePointer.current !== null)
               return;
             event.currentTarget.setPointerCapture(event.pointerId);
@@ -359,6 +434,11 @@ export function DeviceStreamView(props: {
             client?.sendTouch("begin", x, y);
           }}
           onPointerMove={(event) => {
+            if (props.platform === "desktop") {
+              const { x, y } = normalizedPoint(event);
+              client?.sendMouse?.("move", x, y);
+              return;
+            }
             if (activePointer.current?.id !== event.pointerId) return;
             const { x, y } = normalizedPoint(event);
             activePointer.current = { id: event.pointerId, x, y };

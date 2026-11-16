@@ -1,4 +1,9 @@
-import { EasDeviceHostConfigs, SimlockDeviceHostConfigs, SshDeviceHostConfigs } from "./device.ts";
+import {
+  EasDeviceHostConfigs,
+  SimlockDeviceHostConfigs,
+  SshDeviceHostConfigs,
+  SeamlessDeviceHostConfigs,
+} from "./device.ts";
 import {
   AuthOrchestrationOperateScope,
   AuthAccessWriteScope,
@@ -1441,6 +1446,9 @@ export const ServerSettings = Schema.Struct({
   deviceOnboardingCompleted: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   deviceHosts: SshDeviceHostConfigs.pipe(Schema.withDecodingDefault(Effect.succeed([]))),
   easDeviceHosts: EasDeviceHostConfigs.pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  seamlessDeviceHosts: SeamlessDeviceHostConfigs.pipe(
+    Schema.withDecodingDefault(Effect.succeed([])),
+  ),
   simlockDeviceHosts: SimlockDeviceHostConfigs.pipe(Schema.withDecodingDefault(Effect.succeed([]))),
   /** Alpha: Simlock device hosts. Off, the server ignores `simlockDeviceHosts`. */
   simlockDeviceHostsEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
@@ -1892,6 +1900,7 @@ export const ServerSettingsPatch = Schema.Struct({
   deviceOnboardingCompleted: Schema.optionalKey(Schema.Boolean),
   deviceHosts: Schema.optionalKey(SshDeviceHostConfigs),
   easDeviceHosts: Schema.optionalKey(EasDeviceHostConfigs),
+  seamlessDeviceHosts: Schema.optionalKey(SeamlessDeviceHostConfigs),
   simlockDeviceHosts: Schema.optionalKey(SimlockDeviceHostConfigs),
   simlockDeviceHostsEnabled: Schema.optionalKey(Schema.Boolean),
   sidebarAutoSettleAfterDays: Schema.optionalKey(Schema.NullOr(SidebarAutoSettleAfterDays)),

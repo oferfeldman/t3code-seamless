@@ -218,13 +218,17 @@ export function DevicePreviewScreen({
           },
         ]
       : []),
-    {
-      id: "app-switcher",
-      title: "App switcher",
-      icon: "square.on.square",
-      disabled: !inputConnected,
-      onPress: () => streamRef.current?.appSwitcher(),
-    },
+    ...(preview?.session.platform !== "desktop"
+      ? [
+          {
+            id: "app-switcher",
+            title: "App switcher",
+            icon: "square.on.square" as const,
+            disabled: !inputConnected,
+            onPress: () => streamRef.current?.appSwitcher(),
+          },
+        ]
+      : []),
     ...(preview?.session.platform === "ios"
       ? [
           {
@@ -236,13 +240,17 @@ export function DevicePreviewScreen({
           },
         ]
       : []),
-    {
-      id: "shutdown",
-      title: shuttingDown ? "Shutting down…" : "Shut down device",
-      icon: "power",
-      disabled: !preview || shuttingDown,
-      onPress: () => void shutDownDevice(),
-    },
+    ...(preview?.session.platform !== "desktop"
+      ? [
+          {
+            id: "shutdown",
+            title: shuttingDown ? "Shutting down…" : "Shut down device",
+            icon: "power" as const,
+            disabled: !preview || shuttingDown,
+            onPress: () => void shutDownDevice(),
+          },
+        ]
+      : []),
   ];
   const pressHome = () => streamRef.current?.home();
   const menuItems: AppBarMenuItem[] = [
@@ -311,12 +319,14 @@ export function DevicePreviewScreen({
           className="flex-row items-center justify-center gap-2 px-3 py-2"
           style={{ paddingBottom: Math.max(insets.bottom, 8) }}
         >
-          <ControlPill
-            accessibilityLabel="Home"
-            icon="house"
-            disabled={!inputConnected}
-            onPress={pressHome}
-          />
+          {preview?.session.platform !== "desktop" ? (
+            <ControlPill
+              accessibilityLabel="Home"
+              icon="house"
+              disabled={!inputConnected}
+              onPress={pressHome}
+            />
+          ) : null}
           <DeviceOptionsMenu items={menuItems} />
         </View>
       ) : controlsVisible ? (
@@ -339,12 +349,14 @@ export function DevicePreviewScreen({
               <AppText numberOfLines={1} className="flex-1 text-center font-t3-medium text-base">
                 {preview?.name ?? "Devices"}
               </AppText>
-              <ControlPill
-                accessibilityLabel="Home"
-                icon="house"
-                disabled={!inputConnected}
-                onPress={pressHome}
-              />
+              {preview?.session.platform !== "desktop" ? (
+                <ControlPill
+                  accessibilityLabel="Home"
+                  icon="house"
+                  disabled={!inputConnected}
+                  onPress={pressHome}
+                />
+              ) : null}
               <DeviceOptionsMenu items={menuItems} />
             </GlassSurface>
           </View>
@@ -411,6 +423,7 @@ function OpenDevicePreview({
       platform={session.platform}
       deviceId={session.deviceId}
       serveSimOnly={preview.serveSimOnly}
+      seamless={preview.seamless}
       colors={{
         background: themeVariables["--color-sheet-solid"],
         foreground: themeVariables["--color-foreground"],

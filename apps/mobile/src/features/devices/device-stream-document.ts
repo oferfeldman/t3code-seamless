@@ -3,6 +3,7 @@ import type { DevicePlatform } from "@t3tools/contracts";
 import type { PlatformOSType } from "react-native";
 
 export interface DeviceStreamConfiguration {
+  readonly seamless?: boolean;
   readonly access: DeviceHubAccess;
   readonly platform: DevicePlatform;
   readonly deviceId: string;
@@ -27,7 +28,7 @@ export function deviceStreamBaseUrl(
   // Android targets stream through WebCodecs, which needs a secure context. iOS targets
   // stream an MJPEG image from the environment, which a synthetic https document blocks as
   // mixed content on plain-http environments even with mixedContentMode="always".
-  if (devicePlatform === "android") return "https://localhost/";
+  if (devicePlatform !== "ios") return "https://localhost/";
   return `${new URL(httpBase).origin}/`;
 }
 

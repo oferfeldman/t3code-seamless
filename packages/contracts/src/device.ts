@@ -5,7 +5,7 @@ import * as SchemaTransformation from "effect/SchemaTransformation";
 import { ThreadId, TrimmedNonEmptyString, TrimmedString } from "./baseSchemas.ts";
 import { SettingsSecretValue } from "./settingsSecretValue.ts";
 
-export const DevicePlatform = Schema.Literals(["ios", "android"]);
+export const DevicePlatform = Schema.Literals(["ios", "android", "desktop"]);
 export type DevicePlatform = typeof DevicePlatform.Type;
 
 export const DeviceHostId = TrimmedNonEmptyString.check(Schema.isMaxLength(128));
@@ -97,7 +97,20 @@ export const SimlockDeviceHostConfig = Schema.Struct({
 });
 export type SimlockDeviceHostConfig = typeof SimlockDeviceHostConfig.Type;
 
-export type DeviceHostConfig = SshDeviceHostConfig | EasDeviceHostConfig | SimlockDeviceHostConfig;
+export const SeamlessDeviceHostConfig = Schema.Struct({
+  kind: Schema.Literal("seamless"),
+  id: ConfiguredDeviceHostId,
+  label: TrimmedNonEmptyString,
+  hubUrl: TrimmedNonEmptyString.check(Schema.isPattern(/^https?:\/\/[^\s?#]+\/?$/)),
+  accessToken: TrimmedString.pipe(Schema.annotateKey({ settingsSecret: true })),
+});
+export type SeamlessDeviceHostConfig = typeof SeamlessDeviceHostConfig.Type;
+
+export type DeviceHostConfig =
+  | SshDeviceHostConfig
+  | EasDeviceHostConfig
+  | SimlockDeviceHostConfig
+  | SeamlessDeviceHostConfig;
 
 const uniqueHostIds = Schema.makeFilter(
   (hosts: ReadonlyArray<{ readonly id: string }>) =>
@@ -116,6 +129,8 @@ export const EasDeviceHostConfigs = Schema.Array(EasDeviceHostConfig).check(uniq
 
 /** Kept apart from the other host lists for the same reason as Expo hosts. */
 export const SimlockDeviceHostConfigs = Schema.Array(SimlockDeviceHostConfig).check(uniqueHostIds);
+export const SeamlessDeviceHostConfigs =
+  Schema.Array(SeamlessDeviceHostConfig).check(uniqueHostIds);
 
 export const DeviceEasAccountInput = Schema.Struct({
   /** A saved Expo host whose stored token is checked when no new token is given. */
@@ -224,10 +239,15 @@ const SimlockDeviceHostSummary = Schema.Struct({
   ...deviceHostSummaryFields,
   kind: Schema.Literal("simlock"),
 });
+const SeamlessDeviceHostSummary = Schema.Struct({
+  ...deviceHostSummaryFields,
+  kind: Schema.Literal("seamless"),
+});
 export const DeviceHostSummary = Schema.Union([
   MachineDeviceHostSummary,
   EasDeviceHostSummary,
   SimlockDeviceHostSummary,
+  SeamlessDeviceHostSummary,
 ]);
 export type DeviceHostSummary = typeof DeviceHostSummary.Type;
 
@@ -268,6 +288,7 @@ const deviceServiceStateFields = {
   supportsEasHosts: Schema.optional(Schema.Boolean),
   /** Servers from before Simlock hosts ignore `simlockDeviceHosts`. */
   supportsSimlockHosts: Schema.optional(Schema.Boolean),
+  supportsSeamlessHosts: Schema.optional(Schema.Boolean),
   hostStatus: DeviceHostStatus,
   hostStatusDetail: Schema.optional(Schema.String),
   hostStatuses: DeviceHostStatuses,
@@ -292,6 +313,9 @@ const DeviceServiceStateWire = Schema.Struct({
   hosts: Schema.Array(MachineDeviceHostSummary),
   easHosts: Schema.optional(Schema.Array(EasDeviceHostSummary)),
   simlockHosts: Schema.optional(Schema.Array(SimlockDeviceHostSummary)),
+  seamlessHosts: Schema.optional(Schema.Array(SeamlessDeviceHostSummary)),
+  desktopDevices: Schema.optional(Schema.Array(DeviceSummary)),
+  desktopSessions: Schema.optional(Schema.Array(DeviceSession)),
 });
 const DeviceServiceStateDecoded = Schema.Struct({
   ...deviceServiceStateFields,
@@ -305,12 +329,30 @@ export const DeviceServiceState = DeviceServiceStateWire.pipe(
       typeof DeviceServiceStateDecoded.Type,
       typeof DeviceServiceStateWire.Type
     >({
-      decode: ({ easHosts, simlockHosts, ...state }) => ({
+      decode: ({
+        easHosts,
+        simlockHosts,
+        seamlessHosts,
+        desktopDevices,
+        desktopSessions,
+        ...state
+      }) => ({
         ...state,
-        hosts: [...state.hosts, ...(easHosts ?? []), ...(simlockHosts ?? [])],
+        hosts: [
+          ...state.hosts,
+          ...(easHosts ?? []),
+          ...(simlockHosts ?? []),
+          ...(seamlessHosts ?? []),
+        ],
+        devices: [...state.devices, ...(desktopDevices ?? [])],
+        sessions: [...state.sessions, ...(desktopSessions ?? [])],
       }),
       encode: (state) => ({
         ...state,
+        devices: state.devices.filter((device) => device.platform !== "desktop"),
+        desktopDevices: state.devices.filter((device) => device.platform === "desktop"),
+        sessions: state.sessions.filter((session) => session.platform !== "desktop"),
+        desktopSessions: state.sessions.filter((session) => session.platform === "desktop"),
         hosts: state.hosts.filter(
           (host): host is typeof MachineDeviceHostSummary.Type =>
             host.kind === "local" || host.kind === "ssh",
@@ -320,6 +362,9 @@ export const DeviceServiceState = DeviceServiceStateWire.pipe(
         ),
         simlockHosts: state.hosts.filter(
           (host): host is typeof SimlockDeviceHostSummary.Type => host.kind === "simlock",
+        ),
+        seamlessHosts: state.hosts.filter(
+          (host): host is typeof SeamlessDeviceHostSummary.Type => host.kind === "seamless",
         ),
       }),
     }),

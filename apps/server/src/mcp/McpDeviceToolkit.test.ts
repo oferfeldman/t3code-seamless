@@ -369,7 +369,7 @@ describe("device targeting across hosts", () => {
     },
     devices: [device, macIphone, localPixel, macPixel],
   };
-  const session = (hostId: string, deviceId: string, platform: "ios" | "android") => ({
+  const session = (hostId: string, deviceId: string, platform: "ios" | "android" | "desktop") => ({
     threadId,
     hostId,
     deviceId: DeviceId.make(deviceId),

@@ -1,0 +1,214 @@
+name: Seamless nightly
+
+on:
+  schedule:
+    - cron: "23 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: seamless-nightly
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  sync:
+    if: github.repository == 'oferfeldman/t3code-seamless'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      build: ${{ steps.sync.outputs.build }}
+      ref: ${{ steps.sync.outputs.ref }}
+      version: ${{ steps.sync.outputs.version }}
+      upstream: ${{ steps.sync.outputs.upstream }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: seamless-nightly
+          # GitHub's per-run token cannot push upstream workflow-file changes.
+          token: ${{ secrets.SEAMLESS_SYNC_TOKEN }}
+          fetch-depth: 0
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+      - name: Merge the latest published upstream nightly
+        id: sync
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const releases = await github.paginate(github.rest.repos.listReleases,
+              {owner: 'pingdotgg', repo: 't3code', per_page: 100},
+              (response, done) => {
+                const nightly = response.data.find(r => !r.draft && /^v\d+\.\d+\.\d+-nightly\.\d{8}\.\d+$/.test(r.tag_name));
+                if (nightly) { done(); return [nightly]; }
+                return [];
+              });
+            const upstream = releases[0];
+            if (!upstream) throw new Error('No published upstream nightly found');
+            const git = async (...args) => {
+              const result = await exec.getExecOutput('git', args);
+              return result.stdout.trim();
+            };
+            await git('config', 'user.name', 'github-actions[bot]');
+            await git('config', 'user.email', '41898282+github-actions[bot]@users.noreply.github.com');
+            await git('fetch', '--no-tags', 'https://github.com/pingdotgg/t3code.git', `refs/tags/${upstream.tag_name}`);
+            // A conflict fails this job; never discard the Seamless side or publish that candidate.
+            await git('merge', '--no-edit', 'FETCH_HEAD');
+            const ref = await git('rev-parse', 'HEAD');
+            const own = await github.rest.repos.listReleases({...context.repo, per_page: 10});
+            if (context.eventName === 'schedule' && own.data.find(r => !r.draft)?.body?.includes(`Source: ${ref}`)) {
+              core.setOutput('build', 'false');
+              return;
+            }
+            await git('push', 'origin', 'HEAD:seamless-nightly');
+            const match = /^v(\d+\.\d+\.\d+-nightly\.\d{8}\.)(\d+)$/.exec(upstream.tag_name);
+            // Keep the normal nightly version grammar, with room for fork rebuilds.
+            const version = match[1] + (BigInt(match[2]) * 1000000n + BigInt(process.env.GITHUB_RUN_NUMBER));
+            core.setOutput('build', 'true');
+            core.setOutput('ref', ref);
+            core.setOutput('version', version);
+            core.setOutput('upstream', upstream.tag_name);
+
+  verify_bundle:
+    needs: sync
+    if: needs.sync.outputs.build == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.sync.outputs.ref }}
+          fetch-depth: 0
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+      - uses: ./.github/actions/setup-ci-deps
+      - name: Install the existing browser-test prerequisite
+        run: vp exec --filter @t3tools/web playwright install --with-deps chromium --only-shell
+      - name: Check the Seamless overlay against its upstream base
+        run: vp run check:changed ${{ needs.sync.outputs.upstream }}
+      - name: Align release versions
+        run: node scripts/update-release-package-versions.ts '${{ needs.sync.outputs.version }}'
+      - name: Build the server, web client and desktop bundle
+        shell: bash
+        run: |
+          set -a
+          source .env.example
+          set +a
+          vp run build:desktop:bundle
+      - uses: actions/upload-artifact@v7
+        with:
+          name: js-bundle
+          path: |
+            apps/server/dist
+            apps/desktop/dist-electron
+          if-no-files-found: error
+
+  linux:
+    needs: [sync, verify_bundle]
+    uses: ./.github/workflows/release-desktop.yml
+    with:
+      label: Linux x64
+      runner: ubuntu-latest
+      platform: linux
+      target: AppImage
+      arch: x64
+      rust_target: x86_64-unknown-linux-gnu
+      resource_key: linux-x64
+      cli_archive: true
+      launch_check: true
+      ref: ${{ needs.sync.outputs.ref }}
+      version: ${{ needs.sync.outputs.version }}
+      release_channel: nightly
+      relay_client_tracing: false
+      clerk_publishable_key: pk_live_Y2xlcmsudDMuY29kZXMk
+      clerk_jwt_template: t3-relay
+      clerk_cli_oauth_client_id: hzxSgY2cH10sDU2r
+      relay_url: https://relay.t3.codes
+
+  windows:
+    needs: [sync, verify_bundle]
+    uses: ./.github/workflows/release-desktop.yml
+    with:
+      label: Windows x64
+      runner: ubuntu-latest
+      verify_runner: windows-latest
+      platform: win
+      target: nsis
+      arch: x64
+      rust_target: x86_64-pc-windows-msvc
+      resource_key: win32-x64
+      cli_archive: true
+      ref: ${{ needs.sync.outputs.ref }}
+      version: ${{ needs.sync.outputs.version }}
+      release_channel: nightly
+      relay_client_tracing: false
+      clerk_publishable_key: pk_live_Y2xlcmsudDMuY29kZXMk
+      clerk_jwt_template: t3-relay
+      clerk_cli_oauth_client_id: hzxSgY2cH10sDU2r
+      relay_url: https://relay.t3.codes
+
+  mac:
+    needs: [sync, verify_bundle]
+    uses: ./.github/workflows/release-desktop.yml
+    with:
+      label: macOS arm64
+      runner: macos-latest
+      platform: mac
+      target: dmg
+      arch: arm64
+      rust_target: aarch64-apple-darwin
+      resource_key: darwin-arm64
+      cli_archive: true
+      launch_check: true
+      ref: ${{ needs.sync.outputs.ref }}
+      version: ${{ needs.sync.outputs.version }}
+      release_channel: nightly
+      relay_client_tracing: false
+      clerk_publishable_key: pk_live_Y2xlcmsudDMuY29kZXMk
+      clerk_jwt_template: t3-relay
+      clerk_cli_oauth_client_id: hzxSgY2cH10sDU2r
+      relay_url: https://relay.t3.codes
+
+  publish:
+    needs: [sync, linux, windows, mac]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+          merge-multiple: true
+          pattern: desktop-*
+      - uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+          merge-multiple: true
+          pattern: cli-*
+      - name: Publish verified installers and update manifests together
+        shell: bash
+        env:
+          VERSION: ${{ needs.sync.outputs.version }}
+          SOURCE: ${{ needs.sync.outputs.ref }}
+          UPSTREAM: ${{ needs.sync.outputs.upstream }}
+        run: |
+          set -euo pipefail
+          cd artifacts
+          mv nightly-win-x64.yml nightly.yml
+          find . -type f -name 't3-*' -exec sha256sum {} + > SHA256SUMS
+          test -s SHA256SUMS
+          test -f nightly.yml
+          test -f nightly-mac.yml
+          test -f nightly-linux.yml
+          printf 'Upstream: %s\n\nSource: %s\n\nIncludes Seamless Device-panel integration. Fork builds use this repository for subsequent updates.\n' "$UPSTREAM" "$SOURCE" > "$RUNNER_TEMP/notes.md"
+          gh release create "v$VERSION" --repo "$GITHUB_REPOSITORY" --target "$SOURCE" --title "Seamless nightly $VERSION" --prerelease --draft --notes-file "$RUNNER_TEMP/notes.md"
+          find . -maxdepth 1 -type f -print0 | xargs -0 gh release upload "v$VERSION" --repo "$GITHUB_REPOSITORY"
+          gh release edit "v$VERSION" --repo "$GITHUB_REPOSITORY" --draft=false

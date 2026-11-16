@@ -40,15 +40,19 @@ export function DeviceWorkspace(props: {
     access,
     visible: props.visible && runsHostCommands,
   });
-  const saveScreenshot = () => {
+  const saveScreenshot = (capture?: () => Promise<Blob>) => {
     if (!access || capturing.current || !props.visible) return;
     capturing.current = true;
     setScreenshotPending(true);
     setScreenshotError(null);
-    return captureDeviceScreenshot(
-      { access, platform: props.device.platform, deviceId: props.device.id },
-      // Never aborted: see `capturing` above.
-      new AbortController().signal,
+    return (
+      capture
+        ? capture()
+        : captureDeviceScreenshot(
+            { access, platform: props.device.platform, deviceId: props.device.id },
+            // Never aborted: see `capturing` above.
+            new AbortController().signal,
+          )
     )
       .then((image) => {
         const url = URL.createObjectURL(image);
@@ -101,7 +105,7 @@ export function DeviceWorkspace(props: {
                 view={view}
                 controls={controls}
                 screenshotPending={screenshotPending}
-                onScreenshot={() => void saveScreenshot()}
+                onScreenshot={() => void saveScreenshot(view.handle?.screenshot)}
                 toolsOpen={toolsOpen}
                 onTools={() => setToolsOpen(!toolsOpen)}
                 onFloat={props.onFloat}

@@ -45,6 +45,7 @@ const MUTABLE_PATHS: ReadonlyArray<RegExp> = [
 ];
 
 const ALLOWED_WS_PATHS: ReadonlyArray<RegExp> = [
+  /^\/seamless\/stream$/,
   /^\/api\/devices\/ws$/,
   /^\/vendor\/serve-sim\/helper\/ws$/,
   /^\/vendor\/serve-emu\/ws$/,

@@ -116,7 +116,7 @@ describe("device hub proxy", () => {
     expect(finalized()).toBe(1);
   });
 
-  it.each(["/vendor/serve-sim/helper/ws", "/vendor/serve-emu/ws"])(
+  it.each(["/vendor/serve-sim/helper/ws", "/vendor/serve-emu/ws", "/seamless/stream"])(
     "rejects input socket %s for a read-only session",
     async (path) => {
       const { handler, requests } = fixture([AuthOrchestrationReadScope]);

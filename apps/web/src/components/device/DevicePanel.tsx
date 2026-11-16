@@ -42,7 +42,11 @@ import { DeviceWorkspace } from "./DeviceWorkspace";
 import { PreviewPanelShell, type PreviewPanelMode } from "../preview/PreviewPanelShell";
 
 const platformLabel = (platform: DevicePlatform) =>
-  platform === "ios" ? "iOS Simulators" : "Android Emulators";
+  platform === "desktop"
+    ? "Remote computers"
+    : platform === "ios"
+      ? "iOS Simulators"
+      : "Android Devices";
 
 const deviceKey = (device: Pick<DeviceSummary, "hostId" | "id">) =>
   `${device.hostId}\u0000${device.id}`;
@@ -177,7 +181,9 @@ export function DevicePanel(props: {
   const bootingDevices =
     state.bootingDevices?.filter((device) => device.threadId === threadId) ?? [];
   const { ready: hostReady, busy: hostBusy } = deviceHubReadiness(state);
-  const loading = !activeDevice && (pendingDevice !== null || hostBusy || !loaded);
+  const loading =
+    !activeDevice &&
+    (pendingDevice !== null || (hostBusy && state.devices.length === 0) || !loaded);
   // Without a first snapshot a failed subscription never settles on its own.
   const loadError = loaded ? null : stateError;
   const diagnostics = state.hosts.flatMap((host) => {
@@ -486,7 +492,7 @@ function DeviceDiscoveryWarning(props: {
 
 function groupDevices(state: DeviceServiceState) {
   const groups: Array<{ platform: DevicePlatform; devices: DeviceSummary[] }> = [];
-  for (const platform of ["ios", "android"] as const) {
+  for (const platform of ["ios", "android", "desktop"] as const) {
     const devices = state.devices
       .filter((device) => device.platform === platform)
       .toSorted((a, b) => Number(b.booted) - Number(a.booted) || a.name.localeCompare(b.name));

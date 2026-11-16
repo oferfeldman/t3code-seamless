@@ -63,6 +63,7 @@ const IOS_TOGGLES = new Set([
 const ANDROID_TOGGLES = new Set(["reduceMotion", "networkEnabled"]);
 
 const supportsAction = (platform: DevicePlatform, input: DeviceActionInput): boolean => {
+  if (platform === "desktop") return false;
   const actions = platform === "ios" ? IOS_ACTIONS : ANDROID_ACTIONS;
   if (!actions.has(input.type)) return false;
   if (input.type === "setToggle") {

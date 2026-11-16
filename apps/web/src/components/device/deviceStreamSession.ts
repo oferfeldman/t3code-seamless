@@ -13,6 +13,8 @@ import { Atom } from "effect/reactivity";
 import { refreshDeviceHubAccess } from "~/state/device";
 
 export interface DeviceStreamState {
+  readonly displays: ReadonlyArray<{ id: number; name: string }>;
+  readonly selectedDisplay: number;
   readonly status: DeviceStreamStatus;
   readonly detail: string | undefined;
   /** A frame arrived during this session, so a reconnect can keep showing it. */
@@ -38,6 +40,7 @@ export interface DeviceStreamSession {
 }
 
 export interface DeviceStreamKey {
+  readonly seamless: boolean;
   readonly environmentId: EnvironmentId;
   readonly hostId: string;
   readonly platform: DevicePlatform;
@@ -50,6 +53,8 @@ export interface DeviceStreamKey {
 }
 
 export const IDLE_DEVICE_STREAM_STATE: DeviceStreamState = {
+  displays: [],
+  selectedDisplay: 0,
   status: "connecting",
   detail: undefined,
   hasFrame: false,
@@ -96,6 +101,7 @@ export const deviceStreamSessionAtom = Atom.family((key: DeviceStreamKey) =>
         deviceId: key.deviceId,
         access: key.access,
         serveSimOnly: key.serveSimOnly,
+        seamless: key.seamless,
       },
       createCanvasFrameSink(canvas, () => frameListener?.()),
       {
@@ -107,6 +113,11 @@ export const deviceStreamSessionAtom = Atom.family((key: DeviceStreamKey) =>
         onDuoUnavailable: () => update({ phoneUnavailable: true }),
         onStatus: (status, detail) =>
           update({ status, detail, ...(status === "streaming" ? { hasFrame: true } : {}) }),
+        onDisplays: (displays, selected, all) =>
+          update({
+            displays: all ? [{ id: -1, name: "All displays" }, ...displays] : displays,
+            selectedDisplay: selected,
+          }),
         onScreen: (screen) => {
           get.set(screenAtom, screen);
           update({ screen });

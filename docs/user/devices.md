@@ -7,6 +7,25 @@ yourself. Agents get the same device through `device_*` tools and the
 
 ## Open a device
 
+### Seamless devices and remote computers
+
+In **Settings > Devices > Device sources**, enter your Seamless hub
+address and API token under **Seamless**. Shared Android devices, emulators, iOS
+simulators, and remote Windows, Linux, and macOS computers appear automatically.
+Changes to the shared inventory are checked every five seconds. Disconnect removes
+the source without shutting down its devices.
+
+The viewer uses Seamless's existing screen and input connection. Desktop sessions
+support keyboard input, mouse buttons, dragging, scrolling, and pasting text.
+Seamless sharing and control approvals still apply. Enable **Agent device access**
+to let agents inspect screenshots and use the device-bound command returned by
+`device_open`. Seamless's command uses visual inspection and normalized coordinates;
+its `snapshot` saves an image rather than returning accessibility references.
+Android APK upload is available through that command. Desktop installation and
+other host commands require host-control permission on the Seamless computer.
+
+### Local and other device sources
+
 Open the right panel in a project thread and choose **Device**. On first use,
 the panel walks through three steps: starting the device hub, checking iOS and
 Android support, and choosing whether agents may control devices. Opening the

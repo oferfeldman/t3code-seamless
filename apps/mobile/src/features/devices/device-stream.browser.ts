@@ -50,7 +50,11 @@ export function start(configuration: DeviceStreamConfiguration) {
   frame.setAttribute("role", "application");
   frame.setAttribute(
     "aria-label",
-    platform === "ios" ? "iOS Simulator screen" : "Android Emulator screen",
+    platform === "desktop"
+      ? "Remote desktop screen"
+      : platform === "ios"
+        ? "iOS Simulator screen"
+        : "Android Emulator screen",
   );
   frame.tabIndex = 0;
   Object.assign(frame.style, {
@@ -100,7 +104,9 @@ export function start(configuration: DeviceStreamConfiguration) {
       ? landscape
         ? Math.max(screen.width, screen.height) / Math.min(screen.width, screen.height)
         : Math.min(screen.width, screen.height) / Math.max(screen.width, screen.height)
-      : 9 / 19.5;
+      : platform === "desktop"
+        ? 16 / 9
+        : 9 / 19.5;
     const rotation =
       platform === "ios" && screen && screen.width <= screen.height
         ? screen.orientation === "landscape_left"
@@ -152,11 +158,11 @@ export function start(configuration: DeviceStreamConfiguration) {
   client.setMjpegImage(image);
   const touch = (event: PointerEvent, phase: "begin" | "move" | "end") => {
     const rect = frame.getBoundingClientRect();
-    client.sendTouch(
-      phase,
-      Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)),
-      Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height)),
-    );
+    const x = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
+    const y = Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height));
+    if (platform === "desktop")
+      client.sendMouse?.(phase, x, y, event.button === 2 ? 1 : event.button === 1 ? 2 : 0);
+    else client.sendTouch(phase, x, y);
   };
   frame.addEventListener("pointerdown", (event) => {
     if (!inputConnected || pointerId !== null) return;
@@ -167,7 +173,7 @@ export function start(configuration: DeviceStreamConfiguration) {
     touch(event, "begin");
   });
   frame.addEventListener("pointermove", (event) => {
-    if (pointerId === event.pointerId) touch(event, "move");
+    if (platform === "desktop" || pointerId === event.pointerId) touch(event, "move");
   });
   const endTouch = (event: PointerEvent) => {
     if (pointerId !== event.pointerId) return;
@@ -177,11 +183,35 @@ export function start(configuration: DeviceStreamConfiguration) {
   frame.addEventListener("pointerup", endTouch);
   frame.addEventListener("pointercancel", endTouch);
   frame.addEventListener("lostpointercapture", endTouch);
+  frame.addEventListener("contextmenu", (event) => {
+    if (platform === "desktop") event.preventDefault();
+  });
+  frame.addEventListener(
+    "wheel",
+    (event) => {
+      if (!configuration.seamless) return;
+      event.preventDefault();
+      client.sendScroll?.(event.deltaX, event.deltaY);
+    },
+    { passive: false },
+  );
+  frame.addEventListener("blur", () => client.releaseInput?.());
   frame.addEventListener("keydown", (event) => {
+    if (
+      configuration.seamless &&
+      (event.ctrlKey || event.metaKey) &&
+      event.key.toLowerCase() === "v"
+    )
+      return;
     event.preventDefault();
     client.sendKey(event, "down");
   });
   frame.addEventListener("keyup", (event) => client.sendKey(event, "up"));
+  frame.addEventListener("paste", (event) => {
+    if (!configuration.seamless) return;
+    event.preventDefault();
+    client.sendText(event.clipboardData?.getData("text/plain") ?? "");
+  });
   window.addEventListener("pagehide", stop, { once: true });
   post({ type: "input", connected: false });
   client.start();

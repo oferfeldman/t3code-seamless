@@ -9,6 +9,7 @@ import {
   type SettingsSecretValue,
   SimlockDeviceHostConfig,
   TextGeneratorConfig,
+  SeamlessDeviceHostConfig,
   UsageLimitSourceConfig,
   isSecretReference,
   secretSettingsFields,
@@ -234,6 +235,16 @@ function mapSecretFieldGroups(
           (serverHost === null ? "" : `-${encode(serverHost)}`),
       ) as EasDeviceHostConfig,
   );
+  const seamlessDeviceHosts = settings.seamlessDeviceHosts.map(
+    (host) =>
+      mapFields(
+        host,
+        secretSettingsFields(SeamlessDeviceHostConfig),
+        (field, serverHost) =>
+          `seamless-device-host-${encode(host.id)}-${encode(host.hubUrl)}-${encode(field)}` +
+          (serverHost === null ? "" : `-${encode(serverHost)}`),
+      ) as SeamlessDeviceHostConfig,
+  );
 
   // Its own prefix: an Expo and a Simlock host may share an id.
   const simlockDeviceHosts = settings.simlockDeviceHosts.map(
@@ -259,6 +270,7 @@ function mapSecretFieldGroups(
     usageLimitSources,
     textGenerators,
     easDeviceHosts,
+    seamlessDeviceHosts,
     simlockDeviceHosts,
   };
 }

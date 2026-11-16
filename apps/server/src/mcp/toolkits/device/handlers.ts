@@ -32,10 +32,19 @@ export function agentDeviceQuickStart(
   targetArgs = agentDeviceTargetArgs(device),
   command = "agent-device",
   host?:
+    | { readonly kind: "seamless" }
     | { readonly kind: "eas" }
     | { readonly kind: "simlock"; readonly installDirectory?: string },
 ): string {
   const executable = shellWord(command);
+  if (host?.kind === "seamless")
+    return [
+      `The user is watching ${device.name} in the Device panel through Seamless.`,
+      `Use this device-bound command: ${executable}.`,
+      `Run ${executable} help for its supported controls. screenshot <path> and snapshot <path> save a screen image; inspect it visually.`,
+      "Use tap x y, swipe x y endX endY, text <text>, key <code> [code...], and scroll dy [dx]. Coordinates are normalized 0..1. Multiple desktop key codes form a chord. This driver does not return accessibility refs.",
+      "Keep the device running when finished; device_close releases this T3 session. Only request shutdown when explicitly needed.",
+    ].join("\n");
   const target = targetArgs.map(shellWord).join(" ");
   const run = (args: string) => [executable, args, target].filter(Boolean).join(" ");
   const platformNotes =
@@ -310,9 +319,11 @@ const handlers = {
                 kind: "simlock",
                 ...(agent.installDirectory ? { installDirectory: agent.installDirectory } : {}),
               }
-            : hostKind === "eas"
-              ? { kind: "eas" }
-              : undefined,
+            : hostKind === "seamless"
+              ? { kind: "seamless" }
+              : hostKind === "eas"
+                ? { kind: "eas" }
+                : undefined,
         ),
       };
     }).pipe(Effect.mapError(toolError)),
