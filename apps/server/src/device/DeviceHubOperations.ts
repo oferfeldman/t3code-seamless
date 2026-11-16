@@ -11,6 +11,7 @@ import * as Schema from "effect/Schema";
 import { HttpClient, HttpClientError, HttpClientRequest, HttpClientResponse } from "effect/http";
 
 import type { DeviceHostReady, DeviceOperations, HostDevice } from "./DeviceHost.ts";
+import { seamlessIdentitySource } from "./seamlessIdentitySource.ts";
 
 const BOOT_TIMEOUT = Duration.minutes(3);
 const SCREENSHOT_TIMEOUT = Duration.seconds(20);
@@ -74,10 +75,13 @@ export const makeDeviceHubOperations = (options: {
   readonly origin: string;
   readonly http: HttpClient.HttpClient;
   readonly run: DeviceHostReady["run"];
+  readonly nodePath?: string;
   /** Android gates listing AVDs, which the hub does not report until they boot. */
   readonly platformAvailable: (platform: DevicePlatform) => Effect.Effect<boolean>;
 }): DeviceOperations => {
   const { hostId, origin, run } = options;
+  let sourceId: string | undefined;
+  let identityChecked = false;
   const httpClient = options.http.pipe(HttpClient.withScope);
 
   const fetchJson = Effect.fn("DeviceHubOperations.fetchJson")(function* <A, I>(
@@ -141,6 +145,11 @@ export const makeDeviceHubOperations = (options: {
       };
     }
     const hubList = listed.value;
+    if (!identityChecked && options.nodePath) {
+      const identity = yield* run(options.nodePath, ["-e", seamlessIdentitySource]);
+      sourceId = identity.code === 0 ? identity.stdout.trim() || undefined : undefined;
+      identityChecked = true;
+    }
     const devices: Array<HostDevice> = [...hubList.simulators, ...hubList.emulators];
     const androidAvailable = yield* options.platformAvailable("android");
     const warnings = hubList.errors?.filter(
@@ -189,7 +198,7 @@ export const makeDeviceHubOperations = (options: {
       hubList.simulators.length === 0 &&
       (hubList.errors ?? []).some((error) => SIMULATOR_LIST_FAILED.test(error.message));
     return {
-      devices,
+      devices: devices.map((device) => ({ ...device, ...(sourceId ? { sourceId } : {}) })),
       detail: details.join("\n") || undefined,
       androidDiscoveryIncomplete,
       ...(simulatorsUnlisted ? { incompletePlatforms: ["ios"] as const } : {}),

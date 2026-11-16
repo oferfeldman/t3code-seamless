@@ -313,9 +313,13 @@ it.effect("lists Android devices without probing the host again once it reports 
                 )
               : "";
           const mode = /const mode = "([^"]+)"/.exec(script)?.[1] ?? "";
-          modes.push(mode);
-          output =
-            mode === ""
+          const identity = command.args.some(
+            (arg) => typeof arg === "string" && arg.includes("seamless-computer.json"),
+          );
+          if (!identity) modes.push(mode);
+          output = identity
+            ? "fixture-machine"
+            : mode === ""
               ? "Pixel_8\n"
               : JSON.stringify({
                   nodePath: "/node",

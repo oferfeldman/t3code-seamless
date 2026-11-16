@@ -15,7 +15,7 @@ it.effect(
       const path = yield* Path.Path;
       const stateDir = yield* fs.makeTempDirectoryScoped();
       const device = {
-        id: "computer:test",
+        id: Buffer.from("computer:test").toString("base64url"),
         name: "Desktop",
         platform: "desktop",
         version: "Windows",
@@ -32,7 +32,9 @@ it.effect(
             request,
             request.url.endsWith("/screenshot")
               ? new Response(png)
-              : Response.json({ devices: [device] }),
+              : request.url.endsWith("/api/contributors")
+                ? Response.json([{ id: "test", name: "My desktop", inventory: { emulators: [] } }])
+                : Response.json({ devices: [device] }),
           );
         }),
       );
@@ -47,12 +49,14 @@ it.effect(
         stateDir,
       ).pipe(Effect.provideService(HttpClient.HttpClient, http));
       const ready = yield* host.ensureAgentReady(() => Effect.void);
-      expect((yield* ready.devices.list).devices).toEqual([device]);
+      expect((yield* ready.devices.list).devices).toEqual([
+        { ...device, sourceId: "test", sourceLabel: "My desktop", nativeIds: ["test"] },
+      ]);
       expect(yield* ready.devices.screenshot(device)).toEqual(png);
       expect(
         yield* ready.upstream!("/seamless/stream", new URLSearchParams({ device: device.id })),
       ).toEqual({
-        url: "https://hub.test/api/integrations/t3/devices/computer%3Atest/stream",
+        url: `https://hub.test/api/integrations/t3/devices/${device.id}/stream`,
         headers: { authorization: "Bearer fixture-token" },
         protocols: [],
       });
@@ -61,10 +65,11 @@ it.effect(
       const source = yield* fs.readFileString(
         path.join(path.dirname(launcher), "agent-device-launcher.mjs"),
       );
-      expect(source).toContain('"deviceId":"computer:test"');
+      expect(source).toContain(`"deviceId":"${device.id}"`);
+      expect(source).toContain('"platform":"desktop"');
       expect(source).toContain('"token":"fixture-token"');
       expect(requests).toContain(
-        "POST https://hub.test/api/integrations/t3/devices/computer%3Atest/screenshot",
+        `POST https://hub.test/api/integrations/t3/devices/${device.id}/screenshot`,
       );
       yield* host.stop;
       expect(yield* host.current).toBeNull();

@@ -195,6 +195,10 @@ export const DeviceSummary = Schema.Struct({
   version: Schema.String,
   booted: Schema.Boolean,
   physical: Schema.Boolean,
+  sourceId: Schema.optional(Schema.String),
+  sourceLabel: Schema.optional(Schema.String),
+  nativeIds: Schema.optional(Schema.Array(Schema.String)),
+  seamlessTarget: Schema.optional(Schema.Struct({ hostId: DeviceHostId, deviceId: DeviceId })),
 });
 export type DeviceSummary = typeof DeviceSummary.Type;
 

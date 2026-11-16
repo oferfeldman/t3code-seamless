@@ -86,6 +86,7 @@ import * as HostProcess from "@t3tools/shared/HostProcess";
 import { makeExpoApi } from "./ExpoApi.ts";
 import * as Exit from "effect/Exit";
 import * as LocalDeviceHost from "./LocalDeviceHost.ts";
+import { uniqueDevices } from "./uniqueDevices.ts";
 
 export const DEVICE_HUB_ROUTE_PREFIX = "/api/device-hub";
 
@@ -388,7 +389,7 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
     SynchronizedRef.modifyEffect(stateRef, ({ state }) => {
       const next = { ...update(state), revision: state.revision + 1 };
       const retired = state.sessions.some((session) => !next.sessions.includes(session));
-      return PubSub.publish(statePubSub, next).pipe(
+      return PubSub.publish(statePubSub, uniqueDevices(next)).pipe(
         Effect.as([{ next, retired }, { state: next }] as const),
       );
     }).pipe(
@@ -698,6 +699,7 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
       );
       return (yield* SynchronizedRef.get(stateRef)).state;
     },
+    Effect.map(uniqueDevices),
   );
 
   const configure: DeviceService["Service"]["configure"] = Effect.fn("DeviceService.configure")(
@@ -750,6 +752,7 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
       }
       return yield* list;
     },
+    Effect.map(uniqueDevices),
   );
 
   const findDevice = (
@@ -784,7 +787,8 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
         return yield* new DeviceNotFoundError({ hostId: host.id, deviceId: input.deviceId });
       }
       // Hosts that route their own streams never encode emulator video with serve-emu's ffmpeg.
-      if (device.platform === "android" && !device.physical && !ready.upstream) {
+      const streamTarget = findDevice(uniqueDevices(state), host.id, device.id)?.seamlessTarget;
+      if (device.platform === "android" && !device.physical && !ready.upstream && !streamTarget) {
         // Resolve the override on the device host the way its hub does.
         const encoders = yield* ready.run(ready.nodePath, [
           "-e",
@@ -841,7 +845,8 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
           return yield* new DeviceNotFoundError({ hostId: host.id, deviceId: bootedId });
         }
       } else if (device.booted) {
-        yield* ready.devices.attach(device);
+        if (streamTarget) yield* readiness(streamTarget.hostId);
+        else yield* ready.devices.attach(device);
       }
       if (hosts.get(host.id) !== host)
         return yield* new DeviceHostUnavailableError({
@@ -998,7 +1003,12 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
   const screenshot: DeviceService["Service"]["screenshot"] = Effect.fn("DeviceService.screenshot")(
     function* (input) {
       const { ready, device } = yield* resolveDevice(input.hostId, input.deviceId);
-      const bytes = yield* ready.devices.screenshot(device);
+      const { state } = yield* SynchronizedRef.get(stateRef);
+      const target = findDevice(uniqueDevices(state), device.hostId, device.id)?.seamlessTarget;
+      const capture = target
+        ? yield* resolveDevice(target.hostId, target.deviceId)
+        : { ready, device };
+      const bytes = yield* capture.ready.devices.screenshot(capture.device);
       const png = extractPng(bytes);
       if (png === undefined) {
         return yield* new DeviceOperationError({
@@ -1125,12 +1135,12 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
                 cause: new Error("Tool installation is unavailable in this device service."),
               });
             yield* installTool(tool);
-            return yield* inspect;
+            return yield* inspect.pipe(Effect.map(uniqueDevices));
           }),
         );
       }),
       retryHost,
-      inspect,
+      inspect: inspect.pipe(Effect.map(uniqueDevices)),
       easAccount: Effect.fn("DeviceService.easAccount")(function () {
         return Effect.fail(
           new DeviceEasAccountError({
@@ -1237,10 +1247,10 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
           }),
         );
       }),
-      state: SynchronizedRef.get(stateRef).pipe(Effect.map(({ state }) => state)),
+      state: SynchronizedRef.get(stateRef).pipe(Effect.map(({ state }) => uniqueDevices(state))),
       subscribe: PubSub.subscribe(statePubSub),
       configure,
-      list,
+      list: list.pipe(Effect.map(uniqueDevices)),
       open,
       close,
       shutdown,

@@ -11,6 +11,86 @@ import * as DeviceHost from "./DeviceHost.ts";
 import { makeDeviceHubOperations } from "./DeviceHubOperations.ts";
 import * as DeviceService from "./DeviceService.ts";
 
+it.effect("opens an SSH-discovered emulator with Seamless frames and screenshots", () =>
+  Effect.gen(function* () {
+    const png = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a5ioAAAAASUVORK5CYII=",
+      "base64",
+    );
+    const native = {
+      id: "emulator-5554",
+      sourceId: "mac",
+      name: "Pixel",
+      platform: "android" as const,
+      version: "Android",
+      booted: true,
+      physical: false,
+    };
+    const shared = { ...native, id: "shared", nativeIds: [native.id], sourceLabel: "Mac mini" };
+    const captured: string[] = [];
+    const host = (id: string): DeviceHost.DeviceHost["Service"] => {
+      const ready: DeviceHost.DeviceHostAgentReady = {
+        nodePath: process.execPath,
+        hub: { origin: `http://${id}` },
+        agentDevice: null,
+        helpers: { serveSimAxSettings: null, serveSimCli: null },
+        run: () => Effect.die("Native video encoding must not be needed"),
+        devices: {
+          list: Effect.succeed({ devices: [id === "hub" ? shared : native], detail: undefined }),
+          boot: () => Effect.die("Already booted"),
+          attach: () => Effect.die("Native capture must not be started"),
+          shutdown: () => Effect.die("Must remain running"),
+          screenshot: () =>
+            Effect.sync(() => {
+              captured.push(id);
+              return png;
+            }),
+        },
+      };
+      return {
+        id,
+        label: id,
+        summary: Effect.succeed({
+          id,
+          label: id,
+          kind: id === "hub" ? "seamless" : "ssh",
+          platforms: [{ platform: "android", available: true }],
+          hubInstalled: true,
+          agentDeviceInstalled: true,
+        }),
+        platformAvailability: (platform) => Effect.succeed({ platform, available: true }),
+        ensureReady: () => Effect.succeed(ready),
+        ensureAgentReady: () => Effect.succeed(ready),
+        current: Effect.succeed(ready),
+        stop: Effect.void,
+        stopAgent: Effect.void,
+      };
+    };
+    const service = yield* DeviceService.makeWithHosts(
+      new Map(["ssh", "hub"].map((id) => [id, host(id)])),
+    );
+    expect((yield* service.list).devices).toEqual([
+      {
+        ...native,
+        hostId: "ssh",
+        sourceLabel: "Mac mini",
+        seamlessTarget: { hostId: "hub", deviceId: "shared" },
+      },
+    ]);
+    yield* service.open({
+      threadId: ThreadId.make("native-stream"),
+      hostId: "ssh",
+      deviceId: native.id,
+      platform: "android",
+    });
+    expect((yield* service.screenshot({ hostId: "ssh", deviceId: native.id })).png).toEqual(png);
+    expect(captured).toEqual(["hub"]);
+  }).pipe(
+    Effect.provide(ServerSettings.layerTest({ enableDeviceSupport: true })),
+    Effect.provide(NodeCrypto.layer),
+  ),
+);
+
 it.effect("keeps hosts independent when serials collide and another host fails", () =>
   Effect.gen(function* () {
     const http = HttpClient.make((request) =>

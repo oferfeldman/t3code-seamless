@@ -75,6 +75,28 @@ const state: DeviceServiceState = {
 };
 
 describe("thread device previews", () => {
+  it("uses Seamless frames for a device discovered through SSH", () => {
+    const native = state.devices[1]!;
+    const previews = threadDevicePreviews(
+      {
+        ...state,
+        devices: [
+          {
+            ...native,
+            sourceLabel: "Mac mini",
+            seamlessTarget: { hostId: "seamless", deviceId: "shared-target" },
+          },
+        ],
+      },
+      threadId,
+    );
+    expect(previews[1]).toMatchObject({
+      seamless: true,
+      streamHostId: "seamless",
+      streamDeviceId: "shared-target",
+      description: "Android 15 · Mac mini",
+    });
+  });
   it("keeps device names and selection distinct when hosts have the same Android serial", () => {
     const previews = threadDevicePreviews(state, threadId);
     expect(previews.map((preview) => preview.name)).toEqual(["Pixel 9", "Pixel 8"]);

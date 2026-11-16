@@ -31,9 +31,25 @@ const CommandResult = Schema.Struct({
   code: Schema.Number,
 });
 const BootResult = Schema.Struct({ id: Schema.String });
+const Contributors = Schema.Array(
+  Schema.Struct({
+    id: Schema.String,
+    name: Schema.String,
+    inventory: Schema.Struct({
+      emulators: Schema.Array(
+        Schema.Struct({ id: Schema.String, serial: Schema.optional(Schema.String) }),
+      ),
+    }),
+  }),
+);
 const encodeLauncherConfig = Schema.encodeEffect(
   Schema.fromJsonString(
-    Schema.Struct({ base: Schema.String, token: Schema.String, deviceId: Schema.String }),
+    Schema.Struct({
+      base: Schema.String,
+      token: Schema.String,
+      deviceId: Schema.String,
+      platform: DevicePlatform,
+    }),
   ),
 );
 
@@ -62,10 +78,48 @@ export const make = Effect.fn("SeamlessDeviceHost.make")(function* (
     },
     Effect.mapError((cause) => failure("Seamless request", cause)),
   );
+  const contributors = http
+    .execute(
+      HttpClientRequest.setHeaders(HttpClientRequest.get(`${origin}/api/contributors`), headers),
+    )
+    .pipe(
+      Effect.flatMap(HttpClientResponse.filterStatusOk),
+      Effect.flatMap(HttpClientResponse.schemaBodyJson(Contributors)),
+      Effect.timeout("10 seconds"),
+      Effect.orElseSucceed(() => []),
+    );
   const list = request("/devices").pipe(
     Effect.timeout("10 seconds"),
     Effect.flatMap(HttpClientResponse.schemaBodyJson(Inventory)),
-    Effect.map(({ devices }) => ({ devices, detail: undefined })),
+    Effect.flatMap(({ devices }) =>
+      contributors.pipe(
+        Effect.map((computers) => ({
+          devices: devices.map((device) => {
+            const decoded = Buffer.from(device.id, "base64url").toString("utf8");
+            const ident = decoded.slice(decoded.indexOf(":") + 1);
+            const node = /^node\.([^@]+)@(.*)$/.exec(ident);
+            const sourceId = device.platform === "desktop" ? ident : node?.[1];
+            const computer = computers.find((computer) => computer.id === sourceId);
+            const nativeId = node?.[2] ?? ident;
+            const emulator = computer?.inventory.emulators.find(
+              (emulator) => emulator.id === nativeId,
+            );
+            return {
+              ...device,
+              ...(sourceId ? { sourceId } : {}),
+              sourceLabel:
+                computer?.name ??
+                (device.platform === "desktop" ? device.name : new URL(origin).hostname),
+              nativeIds: [
+                nativeId.replace(/^ios\./, ""),
+                ...(emulator?.serial ? [emulator.serial] : []),
+              ],
+            };
+          }),
+          detail: undefined,
+        })),
+      ),
+    ),
     Effect.mapError((cause) => failure("list Seamless devices", cause)),
   );
   let ready: DeviceHost.DeviceHostAgentReady | null = null;
@@ -96,12 +150,16 @@ export const make = Effect.fn("SeamlessDeviceHost.make")(function* (
     "SeamlessDeviceHost.agentLauncher",
   )(
     function* (deviceId, session) {
+      const device = (yield* list).devices.find((device) => device.id === deviceId);
+      if (!device)
+        return yield* failure("prepare Seamless control", new Error("Device is unavailable."));
       const dir = path.join(stateDir, "device", "targets", session);
       yield* fs.makeDirectory(dir, { recursive: true });
       const sourceConfig = yield* encodeLauncherConfig({
         base,
         token: config.accessToken,
         deviceId,
+        platform: device.platform,
       });
       const source = `const config = ${sourceConfig};\n${seamlessAgentSource}`;
       const entry = path.join(dir, "agent-device-launcher.mjs");

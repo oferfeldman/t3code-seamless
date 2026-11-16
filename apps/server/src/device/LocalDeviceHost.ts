@@ -853,6 +853,7 @@ export const make = Effect.fn("LocalDeviceHost.make")(function* () {
     hub: { origin: running.hub.origin } satisfies DeviceHost.DeviceHubEndpoint,
     devices: makeDeviceHubOperations({
       hostId,
+      nodePath: running.hub.nodePath,
       origin: running.hub.origin,
       http: httpClient,
       run,

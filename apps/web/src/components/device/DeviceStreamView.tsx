@@ -104,8 +104,12 @@ export function DeviceStreamView(props: {
   readonly serveSimOnly?: boolean;
 }) {
   const { state: deviceState } = useDeviceState(props.environmentId);
+  const target = deviceState.devices.find(
+    (device) => device.hostId === props.hostId && device.id === props.deviceId,
+  )?.seamlessTarget;
+  const streamHostId = target?.hostId ?? props.hostId;
   const seamless = deviceState.hosts.some(
-    (host) => host.id === props.hostId && host.kind === "seamless",
+    (host) => host.id === streamHostId && host.kind === "seamless",
   );
   const model = deviceModel(props.platform, props.deviceName ?? "");
   const isDuo = model?.id === "iphone-duo";
@@ -120,16 +124,16 @@ export function DeviceStreamView(props: {
   const onInputCancel = (cancel: (() => void) | null) => {
     cancelPhoneInputRef.current = cancel;
   };
-  const access = useDeviceHubAccess(props.environmentId, props.hostId);
+  const access = useDeviceHubAccess(props.environmentId, streamHostId);
   const ownViewId = useId();
   const viewId = props.viewId ?? ownViewId;
   const session = useAtomValue(
     access && props.visible
       ? deviceStreamSessionAtom({
           environmentId: props.environmentId,
-          hostId: props.hostId,
+          hostId: streamHostId,
           platform: props.platform,
-          deviceId: props.deviceId,
+          deviceId: target?.deviceId ?? props.deviceId,
           access,
           serveSimOnly: props.serveSimOnly === true,
           seamless,

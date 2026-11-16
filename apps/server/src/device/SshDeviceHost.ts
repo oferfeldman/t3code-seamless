@@ -441,6 +441,7 @@ export const make = Effect.fn("SshDeviceHost.make")(function* (
       hub: { origin: hubOrigin },
       devices: makeDeviceHubOperations({
         hostId: config.id,
+        nodePath: remote.nodePath,
         origin: hubOrigin,
         http,
         run,

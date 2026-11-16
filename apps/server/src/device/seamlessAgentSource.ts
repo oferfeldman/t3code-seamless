@@ -9,7 +9,10 @@ async function call(action, body = {}) {
     method: "POST", headers: {authorization: "Bearer " + config.token, "content-type": "application/json"},
     body: JSON.stringify(body), signal: AbortSignal.timeout(120000), redirect: "error"
   });
-  if (!response.ok) throw new Error("Seamless " + action + " failed (HTTP " + response.status + "). Reopen the device if its sharing changed.");
+  if (!response.ok) {
+    const detail = await response.json().catch(() => null);
+    throw new Error("Seamless " + action + " failed (HTTP " + response.status + ")" + (typeof detail?.detail === "string" ? ": " + detail.detail : "."));
+  }
   return response;
 }
 try {
@@ -38,7 +41,11 @@ try {
     if (!response.ok) throw new Error("APK installation failed (HTTP " + response.status + ").");
     console.log(await response.text());
   } else if (command === "exec") {
-    console.log(await (await call("command", {argv: values})).text());
+    const argv = config.platform === "android" && values[0] !== "adb" ? ["adb", "shell", ...values] : values;
+    const result = await (await call("command", {argv})).json();
+    process.stdout.write(result.stdout);
+    process.stderr.write(result.stderr);
+    process.exitCode = result.code;
   } else {
     console.log("Commands: screenshot <path>, snapshot <path>, tap <x> <y>, swipe <x> <y> <endX> <endY>, text <text>, key <code> [code...], scroll <dy> [dx], install <local.apk>, exec <command> [args]. Coordinates are normalized 0..1. Key codes are Android keycodes on phones/simulators, Windows virtual-key codes on desktops (multiple codes form a chord, e.g. key 162 65 for Ctrl+A). Snapshot returns an image; inspect it visually.");
     if (command && command !== "help") process.exitCode = 1;

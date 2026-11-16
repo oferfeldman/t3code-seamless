@@ -19,9 +19,13 @@ export function threadDevicePreviews(state: DeviceServiceState | null, threadId:
             : session.platform === "ios"
               ? "iOS Simulator"
               : "Android Emulator"),
-        description: [device?.version, host?.label].filter(Boolean).join(" · "),
+        description: [device?.version, device?.sourceLabel ?? host?.label]
+          .filter(Boolean)
+          .join(" · "),
         serveSimOnly: host?.kind === "simlock",
-        seamless: host?.kind === "seamless",
+        seamless: !!device?.seamlessTarget || host?.kind === "seamless",
+        streamHostId: device?.seamlessTarget?.hostId ?? session.hostId,
+        streamDeviceId: device?.seamlessTarget?.deviceId ?? session.deviceId,
       };
     });
 }

@@ -414,14 +414,18 @@ function OpenDevicePreview({
   const { session } = preview;
   const { themeVariables } = useAppearancePreferences();
   const [viewer] = useState(uuidv4);
-  const { access, error, refresh } = useDeviceHubAccess(environmentId, session.hostId, viewer);
+  const { access, error, refresh } = useDeviceHubAccess(
+    environmentId,
+    preview.streamHostId,
+    viewer,
+  );
   const onUnauthorized = async () => refresh();
   return access ? (
     <DeviceStreamWebView
       ref={streamRef}
       access={access}
       platform={session.platform}
-      deviceId={session.deviceId}
+      deviceId={preview.streamDeviceId}
       serveSimOnly={preview.serveSimOnly}
       seamless={preview.seamless}
       colors={{
