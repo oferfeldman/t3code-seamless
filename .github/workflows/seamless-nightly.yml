@@ -93,8 +93,10 @@ jobs:
       - uses: ./.github/actions/setup-ci-deps
       - name: Install the existing browser-test prerequisite
         run: vp exec --filter @t3tools/web playwright install --with-deps chromium --only-shell
+      - name: Typecheck release workspaces
+        run: vp run -r --cache --concurrency-limit 1 typecheck || { vp run --last-details; exit 1; }
       - name: Check the Seamless overlay against its upstream base
-        run: vp run check:changed ${{ needs.sync.outputs.base }} || { vp run --last-details; exit 1; }
+        run: vp run check:changed ${{ needs.sync.outputs.base }}
       - name: Align release versions
         run: node scripts/update-release-package-versions.ts '${{ needs.sync.outputs.version }}'
       - name: Build the server, web client and desktop bundle
