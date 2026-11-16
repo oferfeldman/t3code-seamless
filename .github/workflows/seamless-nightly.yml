@@ -16,7 +16,7 @@ permissions:
 jobs:
   sync:
     if: github.repository == 'oferfeldman/t3code-seamless'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
     outputs:
@@ -79,7 +79,7 @@ jobs:
   verify_bundle:
     needs: sync
     if: needs.sync.outputs.build == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6
@@ -117,7 +117,7 @@ jobs:
     uses: ./.github/workflows/release-desktop.yml
     with:
       label: Linux x64
-      runner: ubuntu-latest
+      runner: ubuntu-24.04
       platform: linux
       target: AppImage
       arch: x64
@@ -139,7 +139,7 @@ jobs:
     uses: ./.github/workflows/release-desktop.yml
     with:
       label: Windows x64
-      runner: ubuntu-latest
+      runner: ubuntu-24.04
       verify_runner: windows-latest
       platform: win
       target: nsis
@@ -180,7 +180,7 @@ jobs:
 
   publish:
     needs: [sync, linux, windows, mac]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
     env:
