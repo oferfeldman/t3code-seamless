@@ -4,6 +4,7 @@ import * as Deferred from "effect/Deferred";
 import * as Fiber from "effect/Fiber";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import { HttpClient, HttpClientResponse } from "effect/http";
 import * as ServerSettings from "../serverSettings.ts";
 import { releaseAgentDeviceSession } from "./AgentDeviceTarget.ts";
@@ -86,8 +87,9 @@ it.effect("opens an SSH-discovered emulator with Seamless frames and screenshots
     expect((yield* service.screenshot({ hostId: "ssh", deviceId: native.id })).png).toEqual(png);
     expect(captured).toEqual(["hub"]);
   }).pipe(
-    Effect.provide(ServerSettings.layerTest({ enableDeviceSupport: true })),
-    Effect.provide(NodeCrypto.layer),
+    Effect.provide(
+      Layer.mergeAll(ServerSettings.layerTest({ enableDeviceSupport: true }), NodeCrypto.layer),
+    ),
   ),
 );
 
